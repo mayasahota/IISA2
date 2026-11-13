@@ -82,6 +82,7 @@ main{padding:8px 12px;max-width:1150px}
   font-family:var(--font);font-size:var(--text-size);line-height:1.9;letter-spacing:.03em;word-spacing:.08em;white-space:pre-wrap}
 textarea.pane{resize:vertical;display:block}
 .pane.simple{background:var(--simple-bg)}
+.pane .ph{color:var(--muted)}
 .row{display:flex;gap:8px;flex-wrap:wrap}
  
 .banner{margin-top:12px;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;font-size:.92rem;font-weight:600;border:1px solid}
@@ -198,17 +199,16 @@ textarea.pane{resize:vertical;display:block}
  
         <div>
 <div class="col-head">
-<h3><span aria-hidden="true">✨</span> Simplified Text <span class="lvl">Level 1</span></h3>
+<h3><span aria-hidden="true">✨</span> Simplified Text <span class="lvl" id="lvl">Level 0</span></h3>
 <div class="row">
-<button class="btn">↶ Undo</button>
-<button class="btn primary">↻ Simplify More</button>
+<button class="btn" id="undoBtn" disabled>↶ Undo</button>
+<button class="btn primary" id="simpBtn">↻ Simplify</button>
 </div>
 </div>
-<!-- Placeholder content for layout only -->
-<div class="pane simple" tabindex="0" role="region" aria-label="Simplified text">People with dyslexia often find it hard to understand long documents. This is especially true for texts with specialist words and complicated sentences. Extra support, such as assistive technology, can make understanding easier and save time when reading.</div>
-<div class="banner ok" role="status">
-<span aria-hidden="true">✅</span>
-<span>This simplification has been checked to keep the original meaning.</span>
+<div class="pane simple" id="simpPane" tabindex="0" role="region" aria-label="Simplified text" aria-live="polite"><span class="ph">Your simplified text will appear here.</span></div>
+<div class="banner info" id="banner" role="status" aria-live="polite">
+<span id="bannerIcon" aria-hidden="true">ℹ️</span>
+<span id="bannerText">Press Simplify when you are ready.</span>
 </div>
 </div>
 </div>
@@ -222,5 +222,53 @@ textarea.pane{resize:vertical;display:block}
 </main>
 </div>
  
+<script>
+const $ = id => document.getElementById(id);
+const ICONS = { info: 'ℹ️', warn: '⚠️' };
+const S = { level: 0, maxLevel: 3, busy: false };
+ 
+function setStatus(kind, text) {
+  $('banner').className = 'banner ' + kind;
+  $('bannerIcon').textContent = ICONS[kind];
+  $('bannerText').textContent = text;
+}
+ 
+function render() {
+  const hasText = $('originalBox').value.trim().length > 0;
+  const atMax = S.level >= S.maxLevel;
+  $('lvl').textContent = 'Level ' + S.level;
+  $('simpBtn').textContent = S.level === 0 ? '↻ Simplify' : '↻ Simplify More';
+  $('simpBtn').disabled = S.busy || !hasText || atMax;
+  $('simpBtn').title = atMax ? 'This is the simplest version available' : '';
+}
+ 
+async function simplifyMore() {
+  S.busy = true; render();
+  setStatus('info', 'Simplifying…');
+  try {
+    const r = await fetch('/simplify', {
+      method: 'POST',
+      body: JSON.stringify({ text: $('originalBox').value, level: S.level + 1 })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    S.level = d.level;
+    S.maxLevel = d.max_level;
+    $('simpPane').textContent = d.simplified;
+    setStatus('info', S.level >= S.maxLevel
+      ? `Simplified to level ${S.level}. This is the simplest version available.`
+      : `Simplified to level ${S.level}. Press Simplify More if you want it simpler.`);
+  } catch (e) {
+    setStatus('warn', 'Something went wrong. Please try again.');
+  } finally {
+    S.busy = false; render();
+  }
+}
+ 
+$('simpBtn').onclick = simplifyMore;
+$('originalBox').addEventListener('input', render);
+render();
+</script>
+
 </body>
 </html>
