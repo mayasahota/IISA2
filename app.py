@@ -110,7 +110,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            if self.path == "/simplify":
+            if self.path == "/load":            
+                res = {"text": DEFAULT_TEXT, "source": data.get("source", "")}
+            elif self.path == "/simplify":
                 level = int(data.get("level", 1))
                 res = {"simplified": simplify(data.get("text", ""), level),
                        "level": max(1, min(level, MAX_LEVEL)),

@@ -146,7 +146,7 @@ textarea.pane{resize:vertical;display:block}
  
 <div class="app">
 <nav class="side" aria-label="Main">
-<button class="active">🏠 Home</button>
+<button class="active" id="navHome">🏠 Home</button>
 <button>⚙️ Settings</button>
 <button>ℹ️ About</button>
 </nav>
@@ -154,35 +154,35 @@ textarea.pane{resize:vertical;display:block}
   <main>
 <section class="hero">
 <h2>Welcome to SimplyRead!</h2>
-<p>Choose how you would like to add your text.</p>
+<p id="heroSub">Choose how you would like to add your text.</p>
 </section>
  
     <!-- STEP 1: choose input method -->
-<section class="choices" aria-label="Choose how to add text">
-<button class="choice">
+<section class="choices" id="chooser" aria-label="Choose how to add text">
+<button class="choice" data-source="ocr">
 <span class="ic" aria-hidden="true">📷</span>
 <h3>Scan with OCR</h3>
 <p>Scan an image or PDF</p>
 <span class="tag">Simulated</span>
 </button>
-<button class="choice">
+<button class="choice" data-source="file">
 <span class="ic" aria-hidden="true">📄</span>
 <h3>Upload Text File</h3>
 <p>PDF, Word or TXT</p>
 <span class="tag">Simulated</span>
 </button>
-<button class="choice">
+<button class="choice" data-source="text">
 <span class="ic" aria-hidden="true">⌨️</span>
 <h3>Type or Paste Text</h3>
 <p>Enter your own text</p>
 </button>
 </section>
  
-    <!-- STEP 2: workspace (later this will be hidden until an option is chosen) -->
-<section class="workspace" aria-label="Comparison workspace">
-<button class="link">← Choose a different way to add text</button>
+
+<section class="workspace" id="workspace" hidden aria-label="Comparison workspace">
+<button class="link" id="changeInput">← Choose a different way to add text</button>
  
-      <div class="banner warn" role="status">
+  <div class="banner warn" id="inputNotice" role="status" hidden>
 <span aria-hidden="true">⚠️</span>
 <span>Please check that this text matches your document and correct anything that looks wrong before you press Simplify.</span>
 </div>
@@ -191,8 +191,7 @@ textarea.pane{resize:vertical;display:block}
 <div>
 <div class="col-head"><h3><span aria-hidden="true">📄</span> Original Text</h3></div>
 <label for="originalBox" hidden>Original text (you can edit this)</label>
-<!-- Placeholder content for layout only -->
-<textarea id="originalBox" class="pane" placeholder="Type or paste your text here...">Individuals who experience dyslexia frequently encounter considerable difficulty when attempting to comprehend lengthy documents, particularly those containing specialised terminology and convoluted sentence structures. Consequently, it is advisable to obtain additional support, which may include assistive technology, in order to facilitate understanding and reduce the time required to complete reading tasks.</textarea>
+<textarea id="originalBox" class="pane" placeholder="Type or paste your text here..."></textarea>
 </div>
  
         <div class="arrow" aria-hidden="true">→</div>
@@ -299,6 +298,80 @@ async function simplifyMore() {
   }
 }
  
+/* ---------- Input method selection ---------- */
+const delay = ms => new Promise(r => setTimeout(r, ms));
+let loadId = 0;   // lets us ignore a load if the user goes back while it is running
+const HERO = {
+  choose: 'Choose how you would like to add your text.',
+  text:   'Type or paste your text, then press Simplify.',
+  loaded: 'Check your text, then press Simplify to get a simpler version.'
+};
+ 
+function resetSimplified() {
+  S.level = 0;
+  $('simpPane').innerHTML = '<span class="ph">Your simplified text will appear here.</span>';
+}
+ 
+function showChooser() {
+  loadId++;
+  S.busy = false;
+  $('originalBox').readOnly = false;
+  resetSimplified();
+  $('workspace').hidden = true;
+  $('chooser').hidden = false;
+  $('heroSub').textContent = HERO.choose;
+  render();
+}
+ 
+async function chooseSource(kind) {
+  const myLoad = ++loadId;
+  resetSimplified();
+  $('originalBox').value = '';
+  $('originalBox').readOnly = false;
+  $('inputNotice').hidden = true;
+  $('chooser').hidden = true;
+  $('workspace').hidden = false;
+ 
+  // Type or paste: empty box, ready to type
+  if (kind === 'text') {
+    $('heroSub').textContent = HERO.text;
+    setStatus('info', 'Type or paste your text into the Original Text box, then press Simplify.');
+    render();
+    $('originalBox').focus();
+    return;
+  }
+ 
+  // Simulated OCR / file upload: load the default complex text
+  $('heroSub').textContent = HERO.loaded;
+  $('originalBox').readOnly = true;
+  S.busy = true; render();
+  setStatus('info', kind === 'ocr' ? 'Scanning your document…' : 'Reading your file…');
+  try {
+    await delay(900);   // simulated processing time
+    const r = await fetch('/load', { method: 'POST', body: JSON.stringify({ source: kind }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    if (myLoad !== loadId) return;   // user went back while loading
+    $('originalBox').value = d.text;
+    $('inputNotice').hidden = false;
+    setStatus('info', 'Press Simplify when you have checked the text.');
+  } catch (e) {
+    if (myLoad === loadId) setStatus('warn', 'Something went wrong loading the text. Please try again.');
+  } finally {
+    if (myLoad === loadId) {
+      S.busy = false;
+      $('originalBox').readOnly = false;
+      render();
+    }
+  }
+}
+ 
+document.querySelectorAll('.choice').forEach(b =>
+  b.onclick = () => chooseSource(b.dataset.source));
+$('changeInput').onclick = showChooser;
+$('navHome').onclick = showChooser;
+
+
 $('simpBtn').onclick = simplifyMore;
 $('originalBox').addEventListener('input', render);
 render();
