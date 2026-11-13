@@ -112,21 +112,21 @@ textarea.pane{resize:vertical;display:block}
 <h1>SimplyRead</h1>
 </div>
  
-  <details class="dropdown">
+ <details class="dropdown">
 <summary><span aria-hidden="true">🧍</span> Accessibility Settings <span aria-hidden="true">⌄</span></summary>
 <div class="dropdown-content">
 <div class="setting">
 <label for="fontSelect">Font Type</label>
 <select id="fontSelect">
-<option>Open Dyslexic</option>
-<option>Standard</option>
-<option>Comic Sans</option>
-<option>Verdana</option>
-<option>Arial</option>
+<option value="'OpenDyslexic','Comic Sans MS',sans-serif">Open Dyslexic</option>
+<option value="system-ui,-apple-system,'Segoe UI',sans-serif">Standard</option>
+<option value="'Comic Sans MS','Comic Neue',cursive">Comic Sans</option>
+<option value="Verdana,sans-serif">Verdana</option>
+<option value="Arial,sans-serif">Arial</option>
 </select>
 </div>
 <div class="setting">
-<label for="sizeRange">Text Size (18px)</label>
+<label for="sizeRange">Text Size (<span id="sizeVal">18</span>px)</label>
 <div class="size-row"><span style="font-size:.8rem">Aa</span>
 <input type="range" id="sizeRange" min="16" max="30" value="18">
 <span style="font-size:1.3rem">Aa</span></div>
@@ -134,10 +134,10 @@ textarea.pane{resize:vertical;display:block}
 <div class="setting">
 <span class="lbl">Page Colour</span>
 <div class="swatches" role="group" aria-label="Page colour">
-<button class="swatch" style="background:#ffffff" aria-label="White" aria-pressed="true"></button>
-<button class="swatch" style="background:#fdf3e3" aria-label="Cream" aria-pressed="false"></button>
-<button class="swatch" style="background:#ddd6fb" aria-label="Lavender" aria-pressed="false"></button>
-<button class="swatch" style="background:#0f1226" aria-label="Dark" aria-pressed="false"></button>
+<button class="swatch" data-theme="white"    style="background:#ffffff" aria-label="White"    aria-pressed="true"></button>
+<button class="swatch" data-theme="cream"    style="background:#fdf3e3" aria-label="Cream"    aria-pressed="false"></button>
+<button class="swatch" data-theme="lavender" style="background:#ddd6fb" aria-label="Lavender" aria-pressed="false"></button>
+<button class="swatch" data-theme="dark"     style="background:#0f1226" aria-label="Dark"     aria-pressed="false"></button>
 </div>
 </div>
 </div>
@@ -226,6 +226,40 @@ textarea.pane{resize:vertical;display:block}
 const $ = id => document.getElementById(id);
 const ICONS = { info: 'ℹ️', warn: '⚠️' };
 const S = { level: 0, maxLevel: 3, busy: false };
+
+/* ---------- Accessibility settings (saved in the browser) ---------- */
+const root = document.documentElement;
+const menu = document.querySelector('.dropdown');
+const prefs = { font: $('fontSelect').options[0].value, size: 18, theme: 'white' };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem('SimplyRead-prefs') || '{}')); } catch (e) {}
+ 
+function applyPrefs() {
+  // fall back to the default font if the saved value isn't in the list
+  $('fontSelect').value = prefs.font;
+  if (!$('fontSelect').value) { prefs.font = $('fontSelect').options[0].value; $('fontSelect').value = prefs.font; }
+ 
+  root.style.setProperty('--font', prefs.font);
+  root.style.setProperty('--text-size', prefs.size + 'px');
+  root.dataset.theme = prefs.theme;
+ 
+  $('sizeRange').value = prefs.size;
+  $('sizeVal').textContent = prefs.size;
+  document.querySelectorAll('.swatch').forEach(s =>
+    s.setAttribute('aria-pressed', s.dataset.theme === prefs.theme));
+ 
+  try { localStorage.setItem('SimplyRead-prefs', JSON.stringify(prefs)); } catch (e) {}
+}
+ 
+$('fontSelect').onchange = e => { prefs.font = e.target.value; applyPrefs(); };
+$('sizeRange').oninput   = e => { prefs.size = e.target.value; applyPrefs(); };
+document.querySelectorAll('.swatch').forEach(s =>
+  s.onclick = () => { prefs.theme = s.dataset.theme; applyPrefs(); });
+ 
+// close the menu when clicking elsewhere or pressing Escape
+document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.open = false; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.open = false; });
+ 
+applyPrefs();
  
 function setStatus(kind, text) {
   $('banner').className = 'banner ' + kind;
