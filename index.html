@@ -222,7 +222,7 @@ textarea.pane{resize:vertical;display:block}
 <script>
 const $ = id => document.getElementById(id);
 const ICONS = { info: 'ℹ️', ok: '✅', warn: '⚠️' };
-const S = { level: 0, maxLevel: 4, busy: false, check: null };
+const S = { level: 0, maxLevel: 4, busy: false, check: null, history: [] };
 
 /* ---------- Accessibility settings (saved in the browser) ---------- */
 const root = document.documentElement;
@@ -269,18 +269,19 @@ function setStatus(kind, text, note) {
   }
 }
 
-function showCheckResult() {
+function showCheckResult(prefix = '') {
   const c = S.check;
   const note = `Simulated checker score: ${c.score} (needs ${c.threshold} or more)`;
   if (c.status === 'risk') {
     setStatus('warn',
-      'The checker thinks some meaning may have been lost, so Simplify More is turned off. Please compare this version with the original text.',
+      prefix + 'The checker thinks some meaning may have been lost, so Simplify More is turned off. Please compare this version with the original text.',
       note);
   } else {
     const done = S.level >= S.maxLevel ? ' This is the simplest version available.' : '';
-    setStatus('ok', 'This simplification has been checked to keep the original meaning.' + done, note);
+    setStatus('ok', prefix + 'This simplification has been checked to keep the original meaning.' + done, note);
   }
 }
+ 
  
 function render() {
   const hasText = $('originalBox').value.trim().length > 0;
@@ -290,7 +291,8 @@ function render() {
   $('simpBtn').textContent = S.level === 0 ? '↻ Simplify' : '↻ Simplify More';
   $('simpBtn').disabled = S.busy || !hasText || atMax || blocked;
   $('simpBtn').title = blocked ? 'Turned off: the checker thinks meaning may be lost'
-                     : atMax ? 'This is the simplest version available' : '';
+                     : atMax ? 'This is the simplest version available' : ''
+  $('undoBtn').disabled = S.busy || S.level === 0;
 }
  
 async function simplifyMore() {
@@ -312,6 +314,7 @@ async function simplifyMore() {
     S.check = d.check;
     $('inputNotice').hidden = true;
     $('simpPane').textContent = d.simplified;
+    S.history.push({ text: d.simplified, check: d.check });
     showCheckResult();
   } catch (e) {
     setStatus('warn', 'Something went wrong. Please try again.');
@@ -332,6 +335,7 @@ const HERO = {
 function resetSimplified() {
   S.level = 0;
   S.check = null;
+  S.history = [];
   $('simpPane').innerHTML = '<span class="ph">Your simplified text will appear here.</span>';
 }
  
@@ -368,6 +372,7 @@ async function chooseSource(kind) {
   $('heroSub').textContent = HERO.loaded;
   $('originalBox').readOnly = true;
   S.busy = true; render();
+  $('originalBox').readOnly = true;
   setStatus('info', kind === 'ocr' ? 'Scanning your document…' : 'Reading your file…');
   try {
     await delay(900);   // simulated processing time
@@ -385,6 +390,7 @@ async function chooseSource(kind) {
       S.busy = false;
       $('originalBox').readOnly = false;
       render();
+      $('originalBox').readOnly = false;
     }
   }
 }
@@ -394,9 +400,34 @@ document.querySelectorAll('.choice').forEach(b =>
 $('changeInput').onclick = showChooser;
 $('navHome').onclick = showChooser;
 
+/* ---------- Reversibility: go back one level ---------- */
+function undo() {
+  if (S.busy || S.history.length === 0) return;
+  S.history.pop();
+  S.level = S.history.length;
+  const prev = S.history[S.history.length - 1];
+  S.check = prev ? prev.check : null;
+ 
+  if (prev) {
+    $('simpPane').textContent = prev.text;
+    showCheckResult(`Went back to level ${S.level}. `);
+  } else {
+    $('simpPane').innerHTML = '<span class="ph">Your simplified text will appear here.</span>';
+    setStatus('info', 'Back to the original text. Press Simplify when you are ready.');
+  }
+  render();
+}
+ 
+$('undoBtn').onclick = undo;
 
 $('simpBtn').onclick = simplifyMore;
-$('originalBox').addEventListener('input', render);
+$('originalBox').addEventListener('input', () => {
+  if (S.level > 0) {
+    resetSimplified();
+    setStatus('info', 'You changed the original text, so the simplified version was cleared. Press Simplify to start again.');
+  }
+  render();
+});
 render();
 </script>
 
