@@ -66,6 +66,24 @@ SAMPLES = {
             "without telling us in time, you may be charged. Please bring identification and "
             "your medication list.",
         ],
+        "alts": [
+            "You need to arrive about fifteen minutes before your appointment to fill in the "
+            "registration forms. If you do not come and have not told us at least twenty-four "
+            "hours before, you may have to pay a fee. Your later appointments may also be "
+            "limited. Please bring photo identification and a list of the medication you are "
+            "taking.",
+            "Please come about fifteen minutes early and fill in the registration forms. If you "
+            "miss an appointment and have not told us at least twenty-four hours before, you "
+            "may be charged a fee. Your later appointments may also be limited. Please bring "
+            "photo identification and a list of your medication.",
+            "Please come about fifteen minutes early to fill in the registration forms. Tell us "
+            "at least 24 hours before if you cannot come, or you may be charged a fee. Later "
+            "appointments may also have extra limits. Please bring photo identification and a "
+            "list of your medication.",
+            "Come fifteen minutes early to fill in the forms. If you cannot come, tell us at "
+            "least 24 hours before, or you may have to pay a fee. Later visits may also have "
+            "limits. Please bring photo identification and a list of your medication.",
+        ],
     },
     "file": {  # uploaded coursework policy: 4 approved, 5th declined
         "text": (
@@ -108,6 +126,37 @@ SAMPLES = {
             "time. You may need to give evidence. Late work loses marks every day and may get "
             "zero. Ask the support team for help early.",
         ],
+        "alts": [
+            "Students who think they will have trouble meeting a coursework deadline must tell "
+            "the module coordinator in writing before the closing date. Requests will only be "
+            "looked at if you give supporting evidence, such as medical documents. Late work "
+            "handed in without an approved extension loses ten percent each day, for up to five "
+            "days. After that, a mark of zero will be given. Students are advised to ask the "
+            "support team for help as early as possible.",
+ 
+            "If you think you will miss a coursework deadline, tell the module coordinator in "
+            "writing before the closing date. Requests are only looked at if you give evidence, "
+            "such as medical documents. Late work without an approved extension loses ten "
+            "percent each day, for up to five days. After that, you get zero. Please ask the "
+            "support team for help as early as possible.",
+ 
+            "Tell the module coordinator in writing before the closing date if you may miss a "
+            "deadline. Requests are only looked at with evidence, such as medical documents. "
+            "Late work without an approved extension loses ten percent each day, for up to five "
+            "days. After that, the mark is zero. Please ask the support team for help as early "
+            "as possible.",
+ 
+            "If you may miss a deadline, tell the module coordinator in writing before the "
+            "closing date. Give evidence, such as medical documents, or your request will not "
+            "be looked at. Late work with no approved extension loses ten percent a day for up "
+            "to five days. After that, the mark is zero. Ask the support team for help as early "
+            "as you can.",
+ 
+            "Tell the module coordinator in writing before the deadline if you may need more "
+            "time. Give evidence, such as medical documents. Late work loses ten percent each "
+            "day, for up to five days. After that, the mark is zero. Ask the support team for "
+            "help early.",
+        ],
     },
 }
  
@@ -138,12 +187,21 @@ SYN = {
     "comprehend": "understand", "frequently": "often", "residence": "home",
     "facilitate": "help", "advisable": "a good idea", "encounter": "face",
 }
+
+# Second choice of words, used when the user flags a typed-text simplification
+ALT_SYN = {
+    "approximately": "around", "difficult": "tough", "difficulty": "problems",
+    "complex": "involved", "commence": "begin", "assist": "support",
+    "numerous": "lots of", "additional": "more", "require": "have to",
+    "required": "have to", "requires": "has to", "sufficient": "plenty",
+    "purchase": "pay for", "however": "yet",
+}
  
- 
-def swap_words(text):
+def swap_words(text, variant=0):
+    table = {**SYN, **ALT_SYN} if variant % 2 else SYN
     def sub(m):
         w = m.group(0)
-        r = SYN.get(w.lower())
+        r = table.get(w.lower())
         if not r:
             return w
         return r.capitalize() if w[0].isupper() else r
@@ -170,8 +228,8 @@ def first_clause(s):
     return (head if len(head.split()) >= 4 else s).rstrip(".!?, ") + "."
  
  
-def rule_based(text, level):
-    out = swap_words(text)
+def rule_based(text, level, variant=0):
+    out = swap_words(text, variant)
     if level >= 2:
         out = tidy(" ".join(break_up(s) for s in sentences(out)))
     if level >= 3:
@@ -182,12 +240,17 @@ def rule_based(text, level):
     return out
  
  
-def simplify(text, level):
+def simplify(text, level, variant=0):
+    """variant 0 = first version, odd = regenerated (after Flag Incorrect)."""
     s = find_sample(text)
     level = max(1, min(level, max_level_for(text)))
     if s:
-        return s["levels"][level - 1]
-    return rule_based(text, level)
+        versions = s["alts"] if variant % 2 else s["levels"]
+        return versions[level - 1]
+    return rule_based(text, level, variant)
+
+def same(a, b):
+    return " ".join(a.split()) == " ".join(b.split())
  
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
@@ -212,12 +275,16 @@ class Handler(BaseHTTPRequestHandler):
                 text = data.get("text", "")
                 max_level = max_level_for(text)
                 level = max(1, min(int(data.get("level", 1)), max_level))
-                out = simplify(text, level)
-                before = simplify(text, level - 1) if level > 1 else text
+                variant = int(data.get("variant", 0))
+                out = simplify(text, level, variant)
+                if variant:   # regenerating: compare with the version being replaced
+                    before = simplify(text, level, variant - 1)
+                else:
+                    before = simplify(text, level - 1) if level > 1 else text
                 res = {"simplified": out,
                        "level": level,
                        "max_level": max_level,
-                       "unchanged": " ".join(out.split()) == " ".join(before.split()),
+                       "unchanged": same(out, before),
                        "check": check_meaning(text, out)}
             else:
                 res = {"error": "unknown endpoint"}

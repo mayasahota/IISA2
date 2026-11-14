@@ -212,7 +212,7 @@ textarea.pane{resize:vertical;display:block}
 </div>
  
       <div class="toolbar">
-<button class="btn">🚩 Flag Incorrect</button>
+<button class="btn" id="flagBtn">🚩 Flag Incorrect</button>
 <button class="btn">👤 Request Human Check</button>
 </div>
 </section>
@@ -293,6 +293,7 @@ function render() {
   $('simpBtn').title = blocked ? 'Turned off: the checker thinks meaning may be lost'
                      : atMax ? 'This is the simplest version available' : ''
   $('undoBtn').disabled = S.busy || S.level === 0;
+  $('flagBtn').disabled = S.busy || S.level === 0;
 }
  
 async function simplifyMore() {
@@ -314,7 +315,7 @@ async function simplifyMore() {
     S.check = d.check;
     $('inputNotice').hidden = true;
     $('simpPane').textContent = d.simplified;
-    S.history.push({ text: d.simplified, check: d.check });
+S.history.push({ text: d.simplified, check: d.check, variant: 0 });
     showCheckResult();
   } catch (e) {
     setStatus('warn', 'Something went wrong. Please try again.');
@@ -419,6 +420,40 @@ function undo() {
 }
  
 $('undoBtn').onclick = undo;
+
+
+async function flagIncorrect() {
+  if (S.busy || S.history.length === 0) return;
+  const current = S.history[S.history.length - 1];
+  const variant = current.variant + 1;
+ 
+  S.busy = true; $('originalBox').readOnly = true; render();
+  setStatus('info', 'Thanks for the feedback. Making a different version…');
+  try {
+    const r = await fetch('/simplify', {
+      method: 'POST',
+      body: JSON.stringify({ text: $('originalBox').value, level: S.level, variant })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+ 
+    if (d.unchanged) {   // nothing different to offer
+      showCheckResult('I could not find a different way to say this at this level. You can press Undo to go back a level, or request a human check. ');
+      return;
+    }
+    S.maxLevel = d.max_level;
+    S.check = d.check;
+    S.history[S.history.length - 1] = { text: d.simplified, check: d.check, variant };
+    $('simpPane').textContent = d.simplified;
+    showCheckResult('Thanks for the feedback. Here is a new version at the same level. ');
+  } catch (e) {
+    setStatus('warn', 'Something went wrong. Please try again.');
+  } finally {
+    S.busy = false; $('originalBox').readOnly = false; render();
+  }
+}
+ 
+$('flagBtn').onclick = flagIncorrect;
 
 $('simpBtn').onclick = simplifyMore;
 $('originalBox').addEventListener('input', () => {
