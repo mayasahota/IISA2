@@ -12,25 +12,117 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
  
 HERE = os.path.dirname(os.path.abspath(__file__))
  
-MAX_LEVEL = 3
+TYPED_MAX_LEVEL = 4      # levels available for text the user types or pastes
  
-DEFAULT_TEXT = (
-    "Individuals who experience dyslexia frequently encounter considerable difficulty when "
-    "attempting to comprehend lengthy documents, particularly those containing specialised "
-    "terminology and convoluted sentence structures. Consequently, it is advisable to obtain "
-    "additional support, which may include assistive technology, in order to facilitate "
-    "understanding and reduce the time required to complete reading tasks."
-)
+# Only approve a simplification if the checker is quite sure (about 80%).
+# Set high: a missed meaning loss is worse than a false alarm.
+RISK_THRESHOLD = 0.80
+
+def check_meaning(original, simplified):
+
+    """Simulated checker: score = how much of the original survives
+
+    (square root of the word-count ratio, capped at 1), then compare with the threshold."""
+
+    o, s = len(original.split()), len(simplified.split())
+
+    score = round(min(1.0, (s / o) ** 0.5), 2) if o else 1.0
+
+    return {"status": "risk" if score < RISK_THRESHOLD else "ok",
+
+            "score": score, "threshold": RISK_THRESHOLD}
  
-DEFAULT_LEVELS = {
-    1: "People with dyslexia often find it hard to understand long documents. This is especially "
-       "true for texts with specialist words and complicated sentences. Extra support, such as "
-       "assistive technology, can make understanding easier and save time when reading.",
-    2: "People with dyslexia often find long documents hard. Specialist words and complicated "
-       "sentences make this worse. Extra help, such as assistive technology, makes reading "
-       "easier and quicker.",
-    3: "Reading can be hard. Tools can help.",
+ 
+# Two different simulated documents. The last level in each list is the one
+# the checker declines.
+SAMPLES = {
+    "ocr": {   # scanned appointment letter: 3 approved, 4th declined
+        "text": (
+            "Patients are required to arrive approximately fifteen minutes prior to their "
+            "scheduled appointment in order to complete the necessary registration "
+            "documentation. Failure to attend without providing at least twenty-four hours' "
+            "notice may result in a charge being applied, and subsequent appointments may be "
+            "subject to additional restrictions. Please bring a valid form of identification "
+            "and a list of any medication currently being taken."
+        ),
+        "levels": [
+            "Patients must arrive about fifteen minutes before their appointment time to fill "
+            "in the registration forms. If you miss an appointment without telling us at least "
+            "twenty-four hours before, you may be charged a fee. Later appointments may also "
+            "have extra limits. Please bring photo identification and a list of the "
+            "medication you take.",
+ 
+            "Please arrive about fifteen minutes early to fill in the registration forms. If "
+            "you miss an appointment without telling us at least twenty-four hours before, you "
+            "may be charged a fee. Later appointments may also have extra limits. Please bring "
+            "photo identification and a list of the medication you take.",
+ 
+            "Please arrive about fifteen minutes early to fill in the forms. If you miss an "
+            "appointment without telling us 24 hours before, you may be charged a fee. Later "
+            "appointments may also have limits. Please bring photo identification and a list "
+            "of your medication.",
+ 
+            "Arrive fifteen minutes early to fill in forms. If you miss an appointment "
+            "without telling us in time, you may be charged. Please bring identification and "
+            "your medication list.",
+        ],
+    },
+    "file": {  # uploaded coursework policy: 4 approved, 5th declined
+        "text": (
+            "Students who anticipate difficulty in meeting a coursework submission deadline "
+            "must notify the module coordinator in writing prior to the stated closing date. "
+            "Requests will only be considered where supporting evidence, such as medical "
+            "documentation, is provided. Late submissions received without an approved "
+            "extension will incur a penalty of ten percent per day, up to a maximum of five "
+            "days, after which a mark of zero will be recorded. Students are therefore "
+            "advised to seek guidance from the support team as early as possible."
+        ),
+        "levels": [
+            "Students who think they may miss a coursework deadline must tell the module "
+            "coordinator in writing before the closing date. Requests will only be considered "
+            "where supporting evidence, such as medical documents, is provided. Late work "
+            "handed in without an approved extension will lose ten percent per day, up to a "
+            "maximum of five days, after which a mark of zero will be recorded. Students "
+            "should therefore ask the support team for help as early as possible.",
+ 
+            "If you think you may miss a coursework deadline, you must tell the module "
+            "coordinator in writing before the closing date. Requests are only considered if "
+            "you give evidence, such as medical documents. Late work without an approved "
+            "extension loses ten percent of its mark per day, for up to five days. After "
+            "that, the mark is zero. Students should ask the support team for help as early "
+            "as possible.",
+ 
+            "If you may miss a coursework deadline, you must tell the module coordinator in "
+            "writing before the closing date. Requests are only considered if you give "
+            "evidence, such as medical documents. Late work without an approved extension "
+            "loses ten percent per day for up to five days. After that, the mark is zero. "
+            "Students should ask the support team for help as early as possible.",
+ 
+            "Tell the module coordinator in writing before the closing date if you may miss a "
+            "deadline. Requests are only considered with evidence, such as medical documents. "
+            "Late work without an approved extension loses ten percent per day for up to five "
+            "days. After that, the mark is zero. Ask the support team for help as early as "
+            "possible.",
+ 
+            "Tell the module coordinator in writing before the deadline if you need more "
+            "time. You may need to give evidence. Late work loses marks every day and may get "
+            "zero. Ask the support team for help early.",
+        ],
+    },
 }
+ 
+ 
+def find_sample(text):
+    norm = " ".join(text.split())
+    for s in SAMPLES.values():
+        if norm == s["text"]:
+            return s
+    return None
+ 
+ 
+def max_level_for(text):
+    s = find_sample(text)
+    return len(s["levels"]) if s else TYPED_MAX_LEVEL
  
 # ---- simple rule-based simplifier for any other text ----
 SYN = {
@@ -83,16 +175,19 @@ def rule_based(text, level):
     if level >= 2:
         out = tidy(" ".join(break_up(s) for s in sentences(out)))
     if level >= 3:
-        out = " ".join(first_clause(s) for s in sentences(out))
+        sents = [first_clause(s) for s in sentences(out)]
+        if level >= 4:
+            sents = sents[:max(1, len(sents) // 2)]   # keep the first half
+        out = " ".join(sents)
     return out
  
  
 def simplify(text, level):
-    level = max(1, min(level, MAX_LEVEL))
-    if " ".join(text.split()) == DEFAULT_TEXT:
-        return DEFAULT_LEVELS[level]
+    s = find_sample(text)
+    level = max(1, min(level, max_level_for(text)))
+    if s:
+        return s["levels"][level - 1]
     return rule_based(text, level)
- 
  
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
@@ -110,13 +205,20 @@ class Handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            if self.path == "/load":            
-                res = {"text": DEFAULT_TEXT, "source": data.get("source", "")}
+            if self.path == "/load":            # simulated OCR / file upload
+                source = data.get("source", "ocr")
+                res = {"text": SAMPLES.get(source, SAMPLES["ocr"])["text"], "source": source}
             elif self.path == "/simplify":
-                level = int(data.get("level", 1))
-                res = {"simplified": simplify(data.get("text", ""), level),
-                       "level": max(1, min(level, MAX_LEVEL)),
-                       "max_level": MAX_LEVEL}
+                text = data.get("text", "")
+                max_level = max_level_for(text)
+                level = max(1, min(int(data.get("level", 1)), max_level))
+                out = simplify(text, level)
+                before = simplify(text, level - 1) if level > 1 else text
+                res = {"simplified": out,
+                       "level": level,
+                       "max_level": max_level,
+                       "unchanged": " ".join(out.split()) == " ".join(before.split()),
+                       "check": check_meaning(text, out)}
             else:
                 res = {"error": "unknown endpoint"}
             self._send(200, json.dumps(res).encode("utf-8"))

@@ -147,7 +147,6 @@ textarea.pane{resize:vertical;display:block}
 <div class="app">
 <nav class="side" aria-label="Main">
 <button class="active" id="navHome">🏠 Home</button>
-<button>⚙️ Settings</button>
 <button>ℹ️ About</button>
 </nav>
  
@@ -215,7 +214,6 @@ textarea.pane{resize:vertical;display:block}
       <div class="toolbar">
 <button class="btn">🚩 Flag Incorrect</button>
 <button class="btn">👤 Request Human Check</button>
-<button class="btn primary spacer">⬇ Save / Download</button>
 </div>
 </section>
 </main>
@@ -223,8 +221,8 @@ textarea.pane{resize:vertical;display:block}
  
 <script>
 const $ = id => document.getElementById(id);
-const ICONS = { info: 'ℹ️', warn: '⚠️' };
-const S = { level: 0, maxLevel: 3, busy: false };
+const ICONS = { info: 'ℹ️', ok: '✅', warn: '⚠️' };
+const S = { level: 0, maxLevel: 4, busy: false, check: null };
 
 /* ---------- Accessibility settings (saved in the browser) ---------- */
 const root = document.documentElement;
@@ -260,19 +258,39 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.open = 
  
 applyPrefs();
  
-function setStatus(kind, text) {
+function setStatus(kind, text, note) {
   $('banner').className = 'banner ' + kind;
   $('bannerIcon').textContent = ICONS[kind];
   $('bannerText').textContent = text;
+  if (note) {
+    const s = document.createElement('small');
+    s.textContent = note;
+    $('bannerText').append(s);
+  }
+}
+
+function showCheckResult() {
+  const c = S.check;
+  const note = `Simulated checker score: ${c.score} (needs ${c.threshold} or more)`;
+  if (c.status === 'risk') {
+    setStatus('warn',
+      'The checker thinks some meaning may have been lost, so Simplify More is turned off. Please compare this version with the original text.',
+      note);
+  } else {
+    const done = S.level >= S.maxLevel ? ' This is the simplest version available.' : '';
+    setStatus('ok', 'This simplification has been checked to keep the original meaning.' + done, note);
+  }
 }
  
 function render() {
   const hasText = $('originalBox').value.trim().length > 0;
   const atMax = S.level >= S.maxLevel;
+  const blocked = S.check && S.check.status === 'risk';
   $('lvl').textContent = 'Level ' + S.level;
   $('simpBtn').textContent = S.level === 0 ? '↻ Simplify' : '↻ Simplify More';
-  $('simpBtn').disabled = S.busy || !hasText || atMax;
-  $('simpBtn').title = atMax ? 'This is the simplest version available' : '';
+  $('simpBtn').disabled = S.busy || !hasText || atMax || blocked;
+  $('simpBtn').title = blocked ? 'Turned off: the checker thinks meaning may be lost'
+                     : atMax ? 'This is the simplest version available' : '';
 }
  
 async function simplifyMore() {
@@ -285,12 +303,16 @@ async function simplifyMore() {
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
+    if (d.unchanged) {
+      setStatus('info', 'This text is already simple, so it cannot be simplified any further.');
+      return;
+    }
     S.level = d.level;
     S.maxLevel = d.max_level;
+    S.check = d.check;
+    $('inputNotice').hidden = true;
     $('simpPane').textContent = d.simplified;
-    setStatus('info', S.level >= S.maxLevel
-      ? `Simplified to level ${S.level}. This is the simplest version available.`
-      : `Simplified to level ${S.level}. Press Simplify More if you want it simpler.`);
+    showCheckResult();
   } catch (e) {
     setStatus('warn', 'Something went wrong. Please try again.');
   } finally {
@@ -309,6 +331,7 @@ const HERO = {
  
 function resetSimplified() {
   S.level = 0;
+  S.check = null;
   $('simpPane').innerHTML = '<span class="ph">Your simplified text will appear here.</span>';
 }
  
