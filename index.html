@@ -213,7 +213,7 @@ textarea.pane{resize:vertical;display:block}
  
       <div class="toolbar">
 <button class="btn" id="flagBtn">🚩 Flag Incorrect</button>
-<button class="btn">👤 Request Human Check</button>
+<button class="btn" id="humanBtn">👤 Request Human Check</button>
 </div>
 </section>
 </main>
@@ -221,10 +221,11 @@ textarea.pane{resize:vertical;display:block}
  
 <script>
 const $ = id => document.getElementById(id);
-const ICONS = { info: 'ℹ️', ok: '✅', warn: '⚠️' };
-const S = { level: 0, maxLevel: 4, busy: false, check: null, history: [] };
+const ICONS = { info: 'ℹ️', ok: '✅', warn: '⚠️', pending: '⏳' };
+const S = { level: 0, maxLevel: 4, busy: false, check: null, history: [],
+            humanPending: false, humanToken: 0 };
 
-/* ---------- Accessibility settings (saved in the browser) ---------- */
+
 const root = document.documentElement;
 const menu = document.querySelector('.dropdown');
 const prefs = { font: $('fontSelect').options[0].value, size: 18, theme: 'white' };
@@ -294,6 +295,12 @@ function render() {
                      : atMax ? 'This is the simplest version available' : ''
   $('undoBtn').disabled = S.busy || S.level === 0;
   $('flagBtn').disabled = S.busy || S.level === 0;
+  $('humanBtn').disabled = S.busy || S.level === 0 || S.humanPending;
+  if (S.humanPending) {            // pause everything else while the reviewer checks
+    $('simpBtn').disabled = true;
+    $('undoBtn').disabled = true;
+    $('flagBtn').disabled = true;
+  }
 }
  
 async function simplifyMore() {
@@ -324,7 +331,7 @@ S.history.push({ text: d.simplified, check: d.check, variant: 0 });
   }
 }
  
-/* ---------- Input method selection ---------- */
+
 const delay = ms => new Promise(r => setTimeout(r, ms));
 let loadId = 0;   // lets us ignore a load if the user goes back while it is running
 const HERO = {
@@ -337,6 +344,8 @@ function resetSimplified() {
   S.level = 0;
   S.check = null;
   S.history = [];
+  S.humanToken++;          
+  S.humanPending = false;
   $('simpPane').innerHTML = '<span class="ph">Your simplified text will appear here.</span>';
 }
  
@@ -454,6 +463,42 @@ async function flagIncorrect() {
 }
  
 $('flagBtn').onclick = flagIncorrect;
+const HUMAN_DELAY = 4000;   // how long the "reviewer" takes (ms)
+ 
+function requestHumanCheck() {
+  if (S.busy || S.humanPending || S.level === 0) return;
+ 
+  // privacy: the user must agree before anything is shared
+  const agreed = confirm(
+    'A person will check that this simplified text keeps the meaning of the original.\n\n' +
+    'Your original text and the simplified text will be shared with them.\n\n' +
+    'Do you agree to share them?');
+  if (!agreed) return;
+ 
+  const mine = ++S.humanToken;
+  S.humanPending = true;
+  setStatus('pending',
+    'Sent to a human reviewer. Please wait a moment…',
+    'You can keep reading. The other buttons are paused until the reviewer replies.');
+  render();
+ 
+  setTimeout(() => {
+    if (mine !== S.humanToken) return;   // cancelled: text was edited or user went Home
+    S.humanPending = false;
+    if (S.check && S.check.status === 'risk') {
+      setStatus('warn',
+        'The human reviewer agrees that some meaning may have been lost in this version. Press Undo to go back a level, or Flag Incorrect for a different version.',
+        'Simulated human review');
+    } else {
+      setStatus('ok',
+        'A human reviewer has confirmed that this version keeps the meaning of the original.',
+        'Simulated human review');
+    }
+    render();
+  }, HUMAN_DELAY);
+}
+ 
+$('humanBtn').onclick = requestHumanCheck;
 
 $('simpBtn').onclick = simplifyMore;
 $('originalBox').addEventListener('input', () => {
