@@ -95,6 +95,16 @@ textarea.pane{resize:vertical;display:block}
 .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--border);margin-top:18px;padding-top:16px}
 .toolbar .spacer{margin-left:auto}
  
+dialog{border:1px solid var(--border);border-radius:16px;background:var(--surface);color:var(--text);width:min(640px,92vw);max-height:88vh;padding:0;font-family:var(--font);font-size:var(--text-size);line-height:1.8;letter-spacing:.03em;word-spacing:.08em}
+dialog::backdrop{background:rgba(20,10,60,.5)}
+.dlg-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 24px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface)}
+.dlg-head h2{margin:0;font-size:1.4rem}
+.dlg-body{padding:8px 24px 24px}
+.dlg-body h3{margin:20px 0 4px;font-size:1.1rem;color:var(--accent)}
+.dlg-body p,.dlg-body li{margin:4px 0}
+.dlg-body ul{padding-left:22px;margin:4px 0}
+.dlg-note{margin-top:20px;padding:12px 14px;border-radius:10px;background:var(--soft);font-size:.9em}
+
 @media(max-width:980px){
   .app{grid-template-columns:1fr}
   nav.side{flex-direction:row;flex-wrap:wrap;min-height:0}
@@ -147,7 +157,7 @@ textarea.pane{resize:vertical;display:block}
 <div class="app">
 <nav class="side" aria-label="Main">
 <button class="active" id="navHome">🏠 Home</button>
-<button>ℹ️ About</button>
+<button id="navAbout">ℹ️ About</button>
 </nav>
  
   <main>
@@ -219,6 +229,43 @@ textarea.pane{resize:vertical;display:block}
 </main>
 </div>
  
+<dialog id="aboutDlg" aria-labelledby="aboutTitle">
+<div class="dlg-head">
+<h2 id="aboutTitle">About SimplyRead</h2>
+<button class="btn" id="aboutClose">Close ✕</button>
+</div>
+<div class="dlg-body">
+<p>SimplyRead makes hard text easier to read, one step at a time. You stay in control the whole time.</p>
+ 
+    <h3>How to use it</h3>
+<ul>
+<li>Choose how to add your text: scan, upload a file, or type or paste.</li>
+<li>Check the Original Text. Fix anything that looks wrong.</li>
+<li>Press <b>Simplify</b>. Press <b>Simplify More</b> if you want it simpler.</li>
+</ul>
+ 
+    <h3>Your original text</h3>
+<p>Your original text always stays on screen. You can compare it with the simplified version to see if the meaning is the same.</p>
+ 
+    <h3>The checker</h3>
+<p>Every simplified version is looked at by a separate checker. If it thinks meaning may have been lost, it turns off <b>Simplify More</b> and shows a warning. The checker can make mistakes, so please compare the two texts yourself.</p>
+ 
+    <h3>If something looks wrong</h3>
+<ul>
+<li><b>Undo</b> goes back one level.</li>
+<li><b>Flag Incorrect</b> gives you a different version at the same level.</li>
+<li><b>Request Human Check</b> asks a person to check the meaning. We ask you first, because your text is shared with them.</li>
+</ul>
+ 
+    <h3>Make it easier to read</h3>
+<p>Use <b>Accessibility Settings</b> at the top right to change the font, text size and page colour. Your choices are saved on this device.</p>
+ 
+    <div class="dlg-note">
+<b>Prototype note:</b> in this version, scanning, file upload, the checker and the human reviewer are simulated. They show how the system would work, but do not read real documents.
+</div>
+</div>
+</dialog>
+
 <script>
 const $ = id => document.getElementById(id);
 const ICONS = { info: 'ℹ️', ok: '✅', warn: '⚠️', pending: '⏳' };
@@ -292,7 +339,7 @@ function render() {
   $('simpBtn').textContent = S.level === 0 ? '↻ Simplify' : '↻ Simplify More';
   $('simpBtn').disabled = S.busy || !hasText || atMax || blocked;
   $('simpBtn').title = blocked ? 'Turned off: the checker thinks meaning may be lost'
-                     : atMax ? 'This is the simplest version available' : ''
+                     : atMax ? 'This is the simplest version available' : '';
   $('undoBtn').disabled = S.busy || S.level === 0;
   $('flagBtn').disabled = S.busy || S.level === 0;
   $('humanBtn').disabled = S.busy || S.level === 0 || S.humanPending;
@@ -337,7 +384,7 @@ let loadId = 0;   // lets us ignore a load if the user goes back while it is run
 const HERO = {
   choose: 'Choose how you would like to add your text.',
   text:   'Type or paste your text, then press Simplify.',
-  loaded: 'Check your text, then press Simplify to get a simpler version.'
+  loaded: 'Check your text, then press Simplify to get a simpler version created using AI.'
 };
  
 function resetSimplified() {
@@ -499,6 +546,12 @@ function requestHumanCheck() {
 }
  
 $('humanBtn').onclick = requestHumanCheck;
+
+const aboutDlg = $('aboutDlg');
+const openAbout = () => aboutDlg.showModal();
+$('navAbout').onclick = openAbout;
+$('aboutClose').onclick = () => aboutDlg.close();
+aboutDlg.addEventListener('click', e => { if (e.target === aboutDlg) aboutDlg.close(); });  
 
 $('simpBtn').onclick = simplifyMore;
 $('originalBox').addEventListener('input', () => {
