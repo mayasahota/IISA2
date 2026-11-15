@@ -319,7 +319,7 @@ function setStatus(kind, text, note) {
 
 function showCheckResult(prefix = '') {
   const c = S.check;
-  const note = `Simulated checker score: ${c.score} (needs ${c.threshold} or more)`;
+  const note = `Simulated checker confidence: ${Math.round(c.score * 100)}% (needs ${Math.round(c.threshold * 100)}% or more)`;
   if (c.status === 'risk') {
     setStatus('warn',
       prefix + 'The checker thinks some meaning may have been lost, so Simplify More is turned off. Please compare this version with the original text.',
